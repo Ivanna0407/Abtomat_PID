@@ -1,3 +1,13 @@
+//<<<<<<< HEAD
+//=======
+// Copyright (c) FIRST and other WPILib contributors.
+// Open Source Software; you can modify and/or share it under the terms of
+// the WPILib BSD license file in the root directory of this project.
+
+// Intento de control PI :D
+// Intento comentario 2 :O
+
+//>>>>>>> 372b3c779d156f420adc045392477f160db6b4f3
 package frc.robot;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
