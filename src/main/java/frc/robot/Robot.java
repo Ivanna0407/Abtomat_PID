@@ -1,23 +1,15 @@
-// Copyright (c) FIRST and other WPILib contributors.
-// Open Source Software; you can modify and/or share it under the terms of
-// the WPILib BSD license file in the root directory of this project.
-
-// Intento de control PI :D
-
 package frc.robot;
-
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.Encoder;
+
+import java.sql.Time;
+
 import com.revrobotics.CANSparkMax;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;;
-/**
- * The VM is configured to automatically run this class, and to call the functions corresponding to
- * each mode, as described in the TimedRobot documentation. If you change the name of this class or
- * the package after creating this project, you must also update the build.gradle file in the
- * project.
- */
+
 public class Robot extends TimedRobot {
 
  private final XboxController JoyDrive = new XboxController(0);
@@ -32,27 +24,30 @@ public class Robot extends TimedRobot {
  Encoder ChasisEncodeL = new Encoder(8, 9); 
 
  //PID
- //Kp= número proporcional 
- double Kp = 0.05;
  double setpoint = 0;
- //Ki=número integral
- double Ki = 0.02;
- double sumaerrorL=0; 
- double sumaerrorR=0;
+ //Kp = número proporcional 
+ double Kp = 0.025; double P_Error_L; double P_Error_R;
+ //Ki = número integral
+ double Ki = 0.18; double I_Error_L=0; double I_Error_R=0; double LastTime = 0;
+ //kD = número derivativo
+ double Kd = 0.002; double D_Error_L=0; double D_Error_R=0; double LastErrorL = 0; double LastErrorR = 0;
+
   @Override
   public void robotInit() {
+
     //Se resetea variables y encoders
     ChasisEncodeR.reset(); ChasisEncodeL.reset();
     ChasisEncodeR.setReverseDirection(true);
+
     //Configura todos los motores en Brake mode al recibir 0
     MotorLeftS.setIdleMode(CANSparkMax.IdleMode.kBrake);     MotorLeftM.setIdleMode(CANSparkMax.IdleMode.kBrake);
     MotorRightS.setIdleMode(CANSparkMax.IdleMode.kBrake);    MotorRightM.setIdleMode(CANSparkMax.IdleMode.kBrake);
 
     //Calibra la distancia por pulso del encoder (1 vuelta es 128 pulsos en los Grayhill)
-    ChasisEncodeR.setDistancePerPulse(Math.PI/384);
-    ChasisEncodeL.setDistancePerPulse(Math.PI/384);
+    ChasisEncodeR.setDistancePerPulse(Math.PI*4/128); //Math.PI/384
+    ChasisEncodeL.setDistancePerPulse(Math.PI*4/128); //Math.PI/384
 
-    //Set motores en 0 y designamos motores esclavos
+    //Set motores en 0 y designamos motores esclavos e inversos
     MotorLeftS.follow(MotorLeftM); MotorRightS.follow(MotorRightM);
     MotorRightM.set(0);  MotorLeftM.set(0);
     MotorRightM.setInverted(true);
@@ -60,6 +55,8 @@ public class Robot extends TimedRobot {
 
   @Override
   public void robotPeriodic() {
+
+    //Reporte de valores chasis y joystick
     SmartDashboard.putNumber("Encoder Derecho", ChasisEncodeR.getDistance());
     SmartDashboard.putNumber("Encoder Izquierdo", ChasisEncodeL.getDistance());
     SmartDashboard.putNumber("Velocidad Motor Derecho", MotorRightM.get());
@@ -68,75 +65,80 @@ public class Robot extends TimedRobot {
     SmartDashboard.putBoolean("B BUTTON", JoyDrive.getBButton());
   }
   @Override
-  public void autonomousInit() {
-  }
+  public void autonomousInit() {}
 
-  /** This function is called periodically during autonomous. */
   @Override
   public void autonomousPeriodic() {}
   
-  /** This function is called once when teleop is enabled. */
   @Override
   public void teleopInit() {
+
+    //Reset de variables para PID
     ChasisEncodeL.reset(); ChasisEncodeR.reset();
+    LastTime = Timer.getFPGATimestamp();
     setpoint = 0;
+    P_Error_R = 0; P_Error_L = 0;
+    I_Error_L = 0; I_Error_R = 0;
+    D_Error_L = 0; D_Error_R = 0;
   }
 
-  /** This function is called periodically during operator control. */
   @Override
   public void teleopPeriodic() {
-    if(JoyDrive.getAButton()){
-      setpoint = 10;
-    }
-    if(JoyDrive.getBButton()){
-      setpoint = 0;
-    }
-    //datos del encoder 
+    
+    //Datos Robot y Joystick
+    if(JoyDrive.getAButton()){setpoint = 100;}
+    if(JoyDrive.getBButton()){setpoint = 1;}
+    double IntegralZone = setpoint * 0.1;
     double posicionL= ChasisEncodeL.getDistance();
     double posicionR= ChasisEncodeR.getDistance();
-    //Suma los errores para avanzar un poco 
-    sumaerrorL=sumaerrorL + (setpoint-posicionL);
-    sumaerrorR=sumaerrorR + (setpoint-posicionR);
-    //calculo////////////////////////////////////////////////////////
-    //Calcula cuanto falta para llegar a en este caso 100 pulgadas KP
-    double velocidadL = Kp*(setpoint-posicionL)+ Ki*sumaerrorL;
-    double velocidadR = Kp*(setpoint-posicionR)+ Ki*sumaerrorR;
-    if(setpoint-posicionL > setpoint*0.05){
-      MotorLeftM.set(velocidadL);
-    }else{
-      MotorLeftM.set(0);
-    }
-      
-    if(setpoint-posicionR > setpoint*0.05){
-      MotorRightM.set(velocidadR);
-    }else{
-      MotorRightM.set(0);
-    }
-    SmartDashboard.putNumber("ErrorL", velocidadL/Kp);
-    SmartDashboard.putNumber("ErrorR", velocidadR/Kp);
+
+    //kP Error Proporcional
+    P_Error_L = setpoint-posicionL; 
+    P_Error_R = setpoint-posicionR;
+
+    //kI Error Integral 
+    double dt = Timer.getFPGATimestamp() - LastTime;
+    if(Math.abs(P_Error_L) < IntegralZone){I_Error_L += P_Error_L*dt;}
+    if(Math.abs(P_Error_R) < IntegralZone){I_Error_R += P_Error_R*dt;}
+
+    //kD Error derivativo
+    if(Math.abs(P_Error_L) < IntegralZone){D_Error_L = (P_Error_L - LastErrorL) / dt; }
+    if(Math.abs(P_Error_R) < IntegralZone){D_Error_R = (P_Error_R - LastErrorR) / dt; }
+    
+
+    //Control PID
+    double velocidadL = (Kp*P_Error_L) + (Ki*I_Error_L) + (Kd*D_Error_L);
+    double velocidadR = (Kp*P_Error_R) + (Ki*I_Error_R) + (Kd*D_Error_R);
+    
+    //Control de error
+    if(Math.abs(setpoint-posicionL) > setpoint*0.0){MotorLeftM.set(velocidadL);}
+    else{MotorLeftM.set(0);}
+    if(Math.abs(setpoint-posicionR) > setpoint*0.0){MotorRightM.set(velocidadR);}
+    else{MotorRightM.set(0);}
+
+    //Control del tiempo
+    LastTime = Timer.getFPGATimestamp();
+
+    //Control error
+    LastErrorL = P_Error_L; 
+    LastErrorR = P_Error_R;
   }
  
-  /** This function is called once when the robot is disabled. */
   @Override
   public void disabledInit() {}
 
-  /** This function is called periodically when disabled. */
   @Override
   public void disabledPeriodic() {}
 
-  /** This function is called once when test mode is enabled. */
   @Override
   public void testInit() {}
 
-  /** This function is called periodically during test mode. */
   @Override
   public void testPeriodic() {}
 
-  /** This function is called once when the robot is first started up. */
   @Override
   public void simulationInit() {}
 
-  /** This function is called periodically whilst in simulation. */
   @Override
   public void simulationPeriodic() {}
 }
